@@ -11,7 +11,11 @@ provider:
   environment:
     MY_AWS_REGION: ${self:provider.region}
     USERS_TABLE_NAME: ${env:USERS_TABLE_NAME}
+    ROOMS_TABLE_NAME: ${env:ROOMS_TABLE_NAME}
+    BOOKINGS_TABLE_NAME: ${env:BOOKINGS_TABLE_NAME}
     JWT_SECRET_SSM_PARAM: ${env:JWT_SECRET_SSM_PARAM}
+    BOOKING_TOPIC_ARN: ${env:BOOKING_TOPIC_ARN}
+    PAYMENTS_QUEUE_ARN: ${env:PAYMENTS_QUEUE_ARN}
   iam:
     role:
       statements:
@@ -28,6 +32,7 @@ provider:
             - ${env:USERS_TABLE_ARN}/index/*    #for secondary indexs in user
             - ${env:ROOMS_TABLE_ARN}
             - ${env:ROOMS_TABLE_ARN}/index/*    #for secondary indexs in rooms
+            - ${env:BOOKINGS_TABLE_ARN}
 
         - Effect: Allow
           Action:
@@ -35,6 +40,23 @@ provider:
             - ssm:GetParameters
           Resource:
             - ${env:SSM_ARN}
+
+        - Effect: Allow
+          Action:
+            - sns:Publish 
+            - sns:Subscribe
+          Resource: 
+            - ${env:BOOKING_TOPIC_ARN}
+
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - ${env:PAYMENTS_QUEUE_ARN}
+
   httpApi:
     authorizers:
       jwtAuthorizer:
@@ -109,5 +131,26 @@ functions:
       - httpApi:
           path: /room
           method: get
+  
+  #Booking
+  createBooking:
+    handler: src/handlers/bookings/createBooking.createBooking
+    layers:
+      - { Ref: SharedLambdaLayer }
+    events:
+      - httpApi:
+          path: /booking
+          method: post
           authorizer:
             name: jwtAuthorizer
+  
+  #Payment
+  processPayment:
+    handler: src/handlers/payments/processPayment.processPayment
+    layers:
+      - { Ref: SharedLambdaLayer }
+    timeout: 15 
+    events:
+      - sqs:
+          arn: ${env:PAYMENTS_QUEUE_ARN} 
+          batchSize: 1
