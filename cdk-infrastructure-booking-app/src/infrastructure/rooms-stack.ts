@@ -29,7 +29,7 @@ export class RoomsInfrastructureStack extends cdk.Stack {
 
     this.roomsTable.addGlobalSecondaryIndex({
       indexName: "TypeIndex",
-      partitionKey: { name: "type", type: AttributeType.STRING }
+      partitionKey: { name: "typeRoom", type: AttributeType.STRING }
     });
 
     new cdk.CfnOutput(this, tableName, {

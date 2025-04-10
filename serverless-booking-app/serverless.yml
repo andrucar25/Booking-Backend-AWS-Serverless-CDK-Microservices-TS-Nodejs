@@ -1,0 +1,113 @@
+# "service" is the name of this project. This will also be added to your AWS resource names.
+service: serverless-booking-app
+
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  stage: ${env:STAGE, 'dev'}
+  environment:
+    MY_AWS_REGION: ${self:provider.region}
+    USERS_TABLE_NAME: ${env:USERS_TABLE_NAME}
+    JWT_SECRET_SSM_PARAM: ${env:JWT_SECRET_SSM_PARAM}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem     
+            - dynamodb:UpdateItem  
+            - dynamodb:DeleteItem 
+            - dynamodb:Scan
+            - dynamodb:Query
+          Resource:
+            - ${env:USERS_TABLE_ARN}
+            - ${env:USERS_TABLE_ARN}/index/*    #for secondary indexs in user
+            - ${env:ROOMS_TABLE_ARN}
+            - ${env:ROOMS_TABLE_ARN}/index/*    #for secondary indexs in rooms
+
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+          Resource:
+            - ${env:SSM_ARN}
+  httpApi:
+    authorizers:
+      jwtAuthorizer:
+        type: request
+        functionName: authAuthorizer
+        identitySource: 
+          - $request.header.Authorization
+
+
+plugins:
+  - serverless-dotenv-plugin
+
+layers:
+  shared:
+    path: layers/utils
+    name: ${self:service}-shared-utils-layer
+    compatibleRuntimes:
+      - nodejs22.x
+        
+build:
+  esbuild:
+    bundle: true
+    minify: false
+    packages: external
+    exclude:
+      - '@aws-sdk/*'
+      # - 'jsonwebtoken'
+    target: "node22"
+    platform: "node"
+
+
+functions:
+  #authentication
+  login:
+    handler: src/handlers/authorizer/login.handler
+    layers:
+      - { Ref: SharedLambdaLayer }
+    events:
+      - httpApi:
+          path: /auth/login
+          method: post
+
+  authAuthorizer:
+    handler: src/handlers/authorizer/authorizer.handler
+    layers:
+      - { Ref: SharedLambdaLayer }
+
+  #User
+  createUser:
+    handler: src/handlers/users/createUser.createUser
+    layers:
+      - { Ref: SharedLambdaLayer }
+    events:
+      - httpApi:
+          path: /user
+          method: post
+
+  #Room
+  createRoom:
+    handler: src/handlers/rooms/createRoom.createRoom
+    layers:
+      - { Ref: SharedLambdaLayer }
+    events:
+      - httpApi:
+          path: /room
+          method: post
+  getRooms:
+    handler: src/handlers/rooms/getRooms.getRooms
+    layers:
+      - { Ref: SharedLambdaLayer }
+    events:
+      - httpApi:
+          path: /room
+          method: get
+          authorizer:
+            name: jwtAuthorizer
